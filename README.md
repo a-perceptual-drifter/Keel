@@ -16,8 +16,8 @@ file *is* the account.
 ## Quick start
 
 ```bash
-bash setup.sh           # creates .venv, installs deps, installs Ollama,
-                        # pulls llama3.2 + nomic-embed-text
+bash setup.sh                      # creates .venv, installs deps, installs Ollama,
+                                   #   pulls llama3.2 + nomic-embed-text
 .venv/bin/python run.py init       # seed your identity with topics
 .venv/bin/python run.py run        # unified: scheduler + REPL in one process
 # or, separately:
