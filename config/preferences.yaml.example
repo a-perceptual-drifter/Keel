@@ -1,0 +1,18 @@
+# Keel — user preferences. Written during `keel --init`; editable by hand.
+# Overrides config.yaml for surfacing and silence tasks.
+
+challenge_tolerance: medium       # high | medium | low | off
+default_resolution: summary       # micro | summary | synthesis
+surface_density: 5                # items per surface message (3-10)
+reading_mode: deep                # scan | deep
+silence_enabled: true             # false = silence penalties off entirely
+surface_time: "07:00"             # daily surface cron time (24h, local tz)
+surface_days:
+  - mon
+  - tue
+  - wed
+  - thu
+  - fri
+  - sat
+  - sun
+timezone: "UTC"

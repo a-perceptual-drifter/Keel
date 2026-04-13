@@ -1,0 +1,27 @@
+# Keel — feed sources. Written during `keel --init`; add/remove by hand anytime.
+
+sources:
+  - name: "Hacker News"
+    type: hn                       # rss | hn | reddit | url | wildcard
+    enabled: true
+    fetch_interval_hours: 6
+
+  - name: "Aeon"
+    type: rss
+    url: "https://aeon.co/feed.rss"
+    enabled: true
+    fetch_interval_hours: 24
+
+  # Example Reddit source (public subreddit, no auth required):
+  # - name: "r/MachineLearning"
+  #   type: reddit
+  #   url: "r/MachineLearning"
+  #   enabled: true
+  #   fetch_interval_hours: 12
+
+  # Example single URL / blog extracted via trafilatura:
+  # - name: "Simon Willison"
+  #   type: url
+  #   url: "https://simonwillison.net/atom/everything/"
+  #   enabled: true
+  #   fetch_interval_hours: 24

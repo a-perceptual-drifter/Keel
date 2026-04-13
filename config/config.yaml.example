@@ -1,0 +1,111 @@
+# Keel — system configuration
+# Copy to config/config.yaml and edit, or let `keel --setup` generate a tuned copy.
+
+llm:
+  provider: "ollama"           # ollama | anthropic | openai
+  model: "llama3.2"            # model name for the provider
+  base_url: "http://localhost:11434"  # Ollama default; or OpenAI-compatible base URL
+  api_key: ""                  # required for anthropic/openai; leave empty for ollama
+  embed_provider: "ollama"     # ollama | sentence_transformers
+  embed_model: "nomic-embed-text"
+  embed_chunk_size: 5          # articles per embed chunk; lower = more foreground responsiveness
+  summary_max_tokens: 80
+  intro_max_tokens: 60
+  llm_timeout_seconds: 30
+
+scoring:
+  filter_threshold: 0.72
+  introduce_threshold: 0.55
+  challenge_similarity_min: 0.60
+  filter_max_items: 20
+  introduce_max_items: 5
+  challenge_max_items: 3
+
+diversity:
+  max_consecutive_same_thread: 3
+  max_items_per_source: 3
+  confirmation_ratio_alert_threshold: 0.90
+  confirmation_ratio_alert_weeks: 3
+  confirmation_ratio_intervention_threshold: 0.85
+  confirmation_ratio_intervention_weeks: 2
+
+expansion:
+  edge_enabled: true
+  edge_probe_rate: 0.3
+  edge_similarity_min: 0.40
+  edge_similarity_max: 0.54
+  edge_random_fraction: 0.4
+  world_signal_enabled: true
+  world_signal_frequency: "daily"
+  foreign_signal_enabled: true
+  foreign_signal_frequency: "daily"
+  foreign_signal_selection: "adversarial"    # adversarial | random
+  foreign_signal_quality: "standard"         # standard | strict | minimal
+  foreign_signal_filters:
+    block_keywords: []
+    min_content_length: 100
+    require_language: []
+  exploration_budget_pct: 0.30
+  pulse_every_n_surfaces: 7
+  pulse_minimum_interval: 4
+  pulse_age_step_days: 30
+
+mood:
+  default_reset_hours: 24
+  momentum: 0.3
+
+drift:
+  compression_alert_msd_drop_pct: 0.30
+
+surfacing:
+  scheduled_time: "07:00"
+  stale_penalty_per_day: 0.02
+  max_stale_penalty: 0.30
+
+silence:
+  window_hours: 48
+  cap_per_surfacing: 3
+  absence_threshold_days: 5
+
+logging:
+  level: "INFO"
+  path: "./logs/keel.log"
+  max_bytes: 10485760
+  backup_count: 5
+
+storage:
+  db_path: "./store/keel.db"
+  retention_days: 90
+  warn_size_mb: 500
+  auto_backup: true
+  backup_retention: 4
+  backup_path: "store/backups/"
+  audit_retention_days: 365
+  audit_aggregation_enabled: true
+
+identity:
+  max_active_interests: 50
+  consolidation_similarity_threshold: 0.82
+  active_interest_threshold: 0.70
+  interest_saturation_threshold: 0.85
+  weight_floor: 0.10
+  weight_floor_epsilon: 0.105
+  grace_period_days: 14
+  exploration_days: 7
+  exploration_interactions: 50
+  exploration_introduce_threshold: 0.45
+  exploration_edge_probe_rate: 0.6
+  exploration_blend_cycles: 3
+
+ghost_dismiss:
+  days: 14
+  threshold: 0.70
+  penalty: -0.20
+  max_active: 10
+
+qa:
+  top_k: 5
+  summary_truncate: 100
+
+hardware:
+  profile: "unknown"

@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "keel"
+version = "0.1.0"
+description = "Personal feed agent. The account is the agent."
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "A Perceptual Drifter"}]
+requires-python = ">=3.11"
+dependencies = [
+    "apscheduler>=3.10",
+    "click>=8.1",
+    "feedparser>=6.0",
+    "filelock>=3.12",
+    "numpy>=1.26",
+    "requests>=2.31",
+    "rich>=13.7",
+    "trafilatura>=1.8",
+    "cryptography>=42.0",
+    "pyyaml>=6.0",
+    "sqlite-utils>=3.35",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "freezegun>=1.4",
+    "responses>=0.25",
+]
+ollama = [
+    "ollama>=0.1.8",
+]
+sbert = [
+    "sentence-transformers>=2.6",
+]
+
+[project.scripts]
+keel = "run:cli"
+
+[tool.setuptools]
+py-modules = ["run"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*", "agent*", "tests*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
