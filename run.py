@@ -189,7 +189,7 @@ def run():
     sched = build_scheduler(jobs, background=True)
     sched.start()
     try:
-        run_repl(db, store, llm, runtime=runtime)
+        run_repl(db, store, llm, runtime=runtime, jobs=jobs)
     finally:
         try:
             sched.shutdown(wait=False)

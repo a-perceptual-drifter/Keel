@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from datetime import date, datetime
 
 from rich.console import Console
@@ -140,7 +141,10 @@ def _get_session():
     return PromptSession(), patch_stdout
 
 
-def run_repl(db, store, llm=None, runtime: Runtime | None = None) -> None:
+TASK_COMMANDS = {"fetch": "fetch_and_score", "score": "fetch_and_score", "surface": "surface", "silence": "silence", "reflect": "reflect"}
+
+
+def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | None = None) -> None:
     console.print("[bold cyan]keel[/bold cyan] — type 'help' for commands, 'quit' to exit")
     items = _last_surface_items(db)
     if items:
@@ -163,8 +167,21 @@ def run_repl(db, store, llm=None, runtime: Runtime | None = None) -> None:
         if line == "help":
             console.print(
                 "commands: engage N | go further N | worth N | dismiss N | "
-                "noted N | regret N | nuance N <text> | mood <name> | list | status | quit"
+                "noted N | regret N | nuance N <text> | mood <name> | list | status | "
+                "fetch | score | surface | silence | reflect | quit"
             )
+            continue
+        if line in TASK_COMMANDS:
+            if not jobs:
+                console.print("[red]tasks unavailable (no job runner)[/red]")
+                continue
+            job_name = TASK_COMMANDS[line]
+            job = jobs.get(job_name)
+            if job is None:
+                console.print(f"[red]no such job: {job_name}[/red]")
+                continue
+            threading.Thread(target=job, daemon=True).start()
+            console.print(f"[dim]• {line} dispatched[/dim]")
             continue
         if line == "list":
             items = _last_surface_items(db)
