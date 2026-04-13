@@ -165,11 +165,33 @@ def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | N
         if line in {"quit", "exit", ":q"}:
             break
         if line == "help":
-            console.print(
-                "commands: engage N | go further N | worth N | dismiss N | "
-                "noted N | regret N | nuance N <text> | mood <name> | list | status | "
-                "fetch | score | surface | silence | reflect | quit"
-            )
+            console.print("[bold]keel commands[/bold]")
+            console.print("")
+            console.print("[bold cyan]reacting to surfaced items[/bold cyan] [dim](N = item number from last surface)[/dim]")
+            console.print("  [bold]engage N[/bold]       weak positive — you read it (+0.03)")
+            console.print("  [bold]go further N[/bold]   stronger positive — want more like this (+0.10)")
+            console.print("  [bold]worth N[/bold]        strongest positive — this was worth the attention (+0.15)")
+            console.print("  [bold]noted N[/bold]        acknowledged, no signal either way")
+            console.print("  [bold]dismiss N[/bold]      weak negative — not for me right now (-0.02)")
+            console.print("  [bold]regret N[/bold]       strong negative — wasted my time (-0.15)")
+            console.print("  [bold]nuance N <text>[/bold]  refine the matched interest in natural language")
+            console.print("[dim]  aliases: read/skim=engage, more=go further, drop=dismiss, ack=noted[/dim]")
+            console.print("")
+            console.print("[bold cyan]inspecting state[/bold cyan]")
+            console.print("  [bold]list[/bold]           show items from the last surface")
+            console.print("  [bold]status[/bold]         interest count, total interactions, current mood")
+            console.print("  [bold]mood <name>[/bold]    set mood (curious, restless, focused, tired, open, ...)")
+            console.print("")
+            console.print("[bold cyan]triggering tasks[/bold cyan] [dim](dispatched on a background thread)[/dim]")
+            console.print("  [bold]fetch[/bold]          pull new items from all sources and score them")
+            console.print("  [bold]score[/bold]          same as fetch (fetch+score are one job)")
+            console.print("  [bold]surface[/bold]        select + render a new surface message now")
+            console.print("  [bold]silence[/bold]        apply weak negative to items left unanswered past window")
+            console.print("  [bold]reflect[/bold]        decay weights, transition interest states, write summary")
+            console.print("")
+            console.print("[bold cyan]session[/bold cyan]")
+            console.print("  [bold]help[/bold]           this message")
+            console.print("  [bold]quit[/bold]           exit ([dim]also: exit, :q[/dim])")
             continue
         if line in TASK_COMMANDS:
             if not jobs:
