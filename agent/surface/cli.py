@@ -143,6 +143,47 @@ def _get_session():
 
 TASK_COMMANDS = {"fetch": "fetch_and_score", "score": "fetch_and_score", "surface": "surface", "silence": "silence", "reflect": "reflect"}
 
+SUMMARIZE_ALIASES = ("summarize", "summarise", "sum", "tldr")
+
+
+def _fetch_article_body(url: str) -> str:
+    try:
+        import trafilatura
+        downloaded = trafilatura.fetch_url(url)
+        if not downloaded:
+            return ""
+        return trafilatura.extract(downloaded) or ""
+    except Exception:
+        return ""
+
+
+def _summarize_item(db, llm, item: dict) -> str:
+    row = next(iter(db.query("SELECT content FROM articles WHERE id = ?", [item["id"]])), None)
+    body = (row or {}).get("content") or ""
+    if len(body) < 200:
+        fetched = _fetch_article_body(item["url"])
+        if fetched:
+            body = fetched
+            try:
+                db["articles"].update(int(item["id"]), {"content": body})
+            except Exception:
+                pass
+    if not body:
+        return f"(could not retrieve body of {item['url']})"
+    body = body[:8000]
+    system = (
+        "You summarize articles for a reader who has not opened the link. "
+        "Return 3-6 bullet points covering the core claims, evidence, and any "
+        "surprising or non-obvious points. No preamble, no meta-commentary, "
+        "no 'the article says'. If the text is too thin to summarize, say so in one line."
+    )
+    prompt = f"Title: {item['title']}\nURL: {item['url']}\n\n---\n{body}\n---"
+    try:
+        return llm.complete(system, prompt, max_tokens=400).strip()
+    except Exception as e:
+        return f"(summarization failed: {e})"
+
+
 
 def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | None = None) -> None:
     console.print("[bold cyan]keel[/bold cyan] — type 'help' for commands, 'quit' to exit")
@@ -175,6 +216,7 @@ def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | N
             console.print("  [bold]dismiss N[/bold]      weak negative — not for me right now (-0.02)")
             console.print("  [bold]regret N[/bold]       strong negative — wasted my time (-0.15)")
             console.print("  [bold]nuance N <text>[/bold]  refine the matched interest in natural language")
+            console.print("  [bold]summarize N[/bold]    LLM summary of item N ([dim]aliases: sum, tldr[/dim])")
             console.print("[dim]  aliases: read/skim=engage, more=go further, drop=dismiss, ack=noted[/dim]")
             console.print("")
             console.print("[bold cyan]inspecting state[/bold cyan]")
@@ -217,6 +259,28 @@ def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | N
             )
             continue
         write_message(db, "user", line, task="qa")
+        ll = line.lower().strip()
+        sum_match = None
+        for kw in SUMMARIZE_ALIASES:
+            if ll.startswith(kw):
+                rest = line[len(kw):].strip()
+                m = re.match(r"(\d+)", rest)
+                if m:
+                    sum_match = int(m.group(1))
+                break
+        if sum_match is not None:
+            if llm is None:
+                console.print("[red]summarize requires an LLM[/red]")
+                continue
+            if not items:
+                items = _last_surface_items(db)
+            if sum_match < 1 or sum_match > len(items):
+                console.print(f"[red]need an item number 1..{len(items)}[/red]")
+                continue
+            target = items[sum_match - 1]
+            console.print(f"[dim]summarizing {target['title']}...[/dim]")
+            console.print(_summarize_item(db, llm, target))
+            continue
         itype, idx, tail = _parse(line)
         if itype is None:
             console.print("[dim]noted (freeform).[/dim]")
