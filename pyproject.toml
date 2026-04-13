@@ -20,6 +20,7 @@ dependencies = [
     "rich>=13.7",
     "prompt_toolkit>=3.0",
     "trafilatura>=1.8",
+    "cloudscraper>=1.2",
     "cryptography>=42.0",
     "pyyaml>=6.0",
     "sqlite-utils>=3.35",
