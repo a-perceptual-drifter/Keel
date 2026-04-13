@@ -50,7 +50,10 @@ fetch (6h)  →  score  →  surface (07:00)  →  you read  →  interactions
   assigns a bucket: `filter` (≥ 0.72), `introduce` (0.55–0.72),
   `challenge` (scored ≥ 0.60, classified as challenging an interest)
 - **surface** selects a small set with diversity and mood awareness,
-  writes a message to the conversation thread, emits an event to the CLI
+  writes a message to the conversation thread, emits an event to the CLI.
+  If nothing crosses the `filter`/`introduce`/`challenge` thresholds, it
+  falls back to an **exploration surface** — top items by raw interest
+  score regardless of bucket — so you're never left with an empty feed
 - **you** respond with `go further 2`, `dismiss 3`, `noted 1`,
   `nuance 4 specifically for mobile`, etc.
 - **silence** catches surfaced items that went 48h without a response
@@ -83,6 +86,44 @@ extra and setting `embed_model: bge-small-en-v1.5`.
 | `run.py chat`                      | Open CLI REPL without scheduler             |
 | `run.py task --task <name>`        | Run one task manually                       |
 | `run.py status`                    | Show interest count, DB size                |
+
+## Inside the REPL
+
+Once you're in `run.py run` (or `run.py chat`), type `help` to see the full
+command set. A quick tour:
+
+**Reacting to surfaced items** (N is the item number from the last surface):
+
+| Command            | Signal     | Meaning                                   |
+|--------------------|------------|-------------------------------------------|
+| `engage N`         | +0.03      | you read it (aliases: `read`, `skim`)     |
+| `go further N`     | +0.10      | want more like this (alias: `more`)       |
+| `worth N`          | +0.15      | worth the attention                       |
+| `noted N`          |  0         | acknowledged, no signal (alias: `ack`)    |
+| `dismiss N`        | −0.02      | not for me right now (alias: `drop`)      |
+| `regret N`         | −0.15      | wasted my time                            |
+| `nuance N <text>`  | refine     | natural-language refinement of the interest |
+| `summarize N`      | —          | LLM summary of the item (aliases: `sum`, `tldr`); fetches the page body if needed |
+
+**Triggering tasks on demand** — dispatched on a background thread, events print inline:
+
+| Command    | What it does                                          |
+|------------|-------------------------------------------------------|
+| `fetch`    | pull new items from all sources and score them        |
+| `score`    | alias for `fetch` (they're one job)                   |
+| `surface`  | select + render a new surface message now             |
+| `silence`  | weak negative on items left unanswered past the window|
+| `reflect`  | decay weights, transition states, write summary       |
+
+**Inspecting and adjusting state**:
+
+| Command       | What it does                                        |
+|---------------|-----------------------------------------------------|
+| `list`        | show items from the last surface                    |
+| `status`      | interest count, total interactions, current mood    |
+| `mood <name>` | set mood (e.g. `curious`, `restless`, `focused`)    |
+| `help`        | full command reference                               |
+| `quit`        | exit (also: `exit`, `:q`)                            |
 
 ## Configuration
 
