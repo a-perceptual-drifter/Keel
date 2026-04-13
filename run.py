@@ -142,7 +142,7 @@ def schedule():
 
     def _fetch_and_score():
         fetch_all(db, sources)
-        score_pending(db, store.load(), embedder)
+        score_pending(db, store.load(), embedder, llm=llm)
 
     jobs = {
         "fetch_and_score": _fetch_and_score,
@@ -162,7 +162,10 @@ def chat():
     """Open CLI REPL without scheduler."""
     from agent.surface.cli import run_repl
     config, prefs, sources_cfg, db, store = _bootstrap()
-    llm = _build_llm(config) if config.get("llm") else None
+    try:
+        llm = _build_llm(config) if config.get("llm") else None
+    except Exception:
+        llm = None
     run_repl(db, store, llm)
 
 
@@ -177,7 +180,7 @@ def task(task_name):
         click.echo(f"fetched {n}")
     elif task_name == "score":
         from agent.tasks.score import score_pending
-        n = score_pending(db, store.load(), _build_embedder(config))
+        n = score_pending(db, store.load(), _build_embedder(config), llm=_build_llm(config))
         click.echo(f"scored {n}")
     elif task_name == "surface":
         from agent.tasks.surface import run_surface

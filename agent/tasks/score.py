@@ -6,7 +6,16 @@ from datetime import datetime
 
 import sqlite_utils
 
-from core.models import Embedder, IdentityModel, RawItem
+from core.models import (
+    CHALLENGE_SIMILARITY_MIN,
+    Embedder,
+    IdentityModel,
+    LLMClient,
+    MatchReason,
+    RawItem,
+    ScoredArticle,
+)
+from core.scoring.challenger import classify_batch
 from core.scoring.scorer import score as core_score
 
 
@@ -25,12 +34,33 @@ def _row_to_raw(r: dict) -> RawItem:
     )
 
 
-def score_pending(db: sqlite_utils.Database, identity: IdentityModel, embedder: Embedder) -> int:
+def score_pending(
+    db: sqlite_utils.Database,
+    identity: IdentityModel,
+    embedder: Embedder,
+    llm: LLMClient | None = None,
+) -> int:
     rows = list(db["articles"].rows_where("fetch_state = ?", ["ready_to_score"]))
     if not rows:
         return 0
     raws = [_row_to_raw(r) for r in rows]
     scored = core_score(raws, identity, embedder)
+
+    # Challenge classification — candidates ≥ 0.60 with non-off challenge_mode
+    if llm is not None:
+        interest_by_id = {i.id: i for i in identity.interests}
+        candidates = [
+            s for s in scored
+            if s.interest_score >= CHALLENGE_SIMILARITY_MIN
+            and s.match_reason
+            and interest_by_id.get(s.match_reason[0].topic_id)
+            and interest_by_id[s.match_reason[0].topic_id].challenge_mode != "off"
+        ]
+        if candidates:
+            classified = classify_batch(candidates, identity, llm)
+            by_id = {c.raw.id: c for c in classified}
+            scored = [by_id.get(s.raw.id, s) for s in scored]
+
     id_by_raw_id = {s.raw.id: s for s in scored}
     for r in rows:
         s = id_by_raw_id.get(str(r["id"]))
