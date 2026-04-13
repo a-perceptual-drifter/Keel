@@ -1,4 +1,4 @@
-"""Minimal rich REPL with interaction parsing."""
+"""Rich REPL with async event draining via prompt_toolkit."""
 from __future__ import annotations
 
 import json
@@ -8,8 +8,10 @@ from datetime import date, datetime
 from rich.console import Console
 
 from agent.ledger import write_updates
+from agent.runtime import Runtime
 from agent.surface.thread import read_history, write_message
 from core.identity.updater import apply_interaction, nuance_interest
+from core.expansion.mood import MOODS
 
 console = Console()
 
@@ -56,7 +58,6 @@ def _show_items(items: list[dict]) -> None:
 
 
 def _parse(line: str) -> tuple[str | None, int | None, str]:
-    """Return (interaction_type, item_index, rest_text)."""
     ll = line.lower().strip()
     for kw, itype in sorted(COMMANDS.items(), key=lambda x: -len(x[0])):
         if ll.startswith(kw):
@@ -69,6 +70,8 @@ def _parse(line: str) -> tuple[str | None, int | None, str]:
         m = re.match(r"nuance\s+(\d+)\s+(.+)", line, re.IGNORECASE)
         if m:
             return "nuance", int(m.group(1)), m.group(2)
+    if ll.startswith("mood "):
+        return "mood", None, line[5:].strip()
     return None, None, line
 
 
@@ -98,17 +101,61 @@ def _apply(db, store, item: dict, interaction_type: str) -> str:
     return f"{interaction_type} → {topic}"
 
 
-def run_repl(db, store, llm=None) -> None:
+def _set_mood(store, new_mood: str) -> str:
+    new_mood = new_mood.strip().lower()
+    if new_mood not in MOODS:
+        return f"unknown mood: {new_mood} (valid: {', '.join(sorted(MOODS))})"
+    with store.lock():
+        from dataclasses import replace
+        model = store.load()
+        model = replace(model, mood=new_mood, mood_set_at=datetime.now(), mood_inferred=False)
+        store.save(model)
+    return f"mood → {new_mood}"
+
+
+def _drain_events(runtime: Runtime | None) -> None:
+    if runtime is None:
+        return
+    for ev in runtime.drain():
+        if ev.type == "new_message":
+            console.print(
+                f"\n[bold cyan]↪ new surface message[/bold cyan] "
+                f"([dim]{ev.payload.get('count', 0)} items[/dim])"
+            )
+            console.print(ev.payload.get("content", ""))
+        elif ev.type == "task_start":
+            console.print(f"[dim]• {ev.payload.get('task', '?')} started[/dim]")
+        elif ev.type == "task_complete":
+            console.print(
+                f"[dim]• {ev.payload.get('task', '?')} complete "
+                f"({ev.payload.get('count', 0)})[/dim]"
+            )
+        elif ev.type == "error":
+            console.print(f"[red]✗ {ev.payload.get('task', '?')}: {ev.payload.get('error', '')}[/red]")
+
+
+def _get_session():
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.patch_stdout import patch_stdout
+    return PromptSession(), patch_stdout
+
+
+def run_repl(db, store, llm=None, runtime: Runtime | None = None) -> None:
     console.print("[bold cyan]keel[/bold cyan] — type 'help' for commands, 'quit' to exit")
     items = _last_surface_items(db)
     if items:
         console.print("[dim]last surface:[/dim]")
         _show_items(items)
+
+    session, patch_stdout = _get_session()
     while True:
+        _drain_events(runtime)
         try:
-            line = input("> ").strip()
+            with patch_stdout():
+                line = session.prompt("> ").strip()
         except (EOFError, KeyboardInterrupt):
             break
+        _drain_events(runtime)
         if not line:
             continue
         if line in {"quit", "exit", ":q"}:
@@ -116,7 +163,7 @@ def run_repl(db, store, llm=None) -> None:
         if line == "help":
             console.print(
                 "commands: engage N | go further N | worth N | dismiss N | "
-                "noted N | regret N | nuance N <text> | list | status | quit"
+                "noted N | regret N | nuance N <text> | mood <name> | list | status | quit"
             )
             continue
         if line == "list":
@@ -134,6 +181,9 @@ def run_repl(db, store, llm=None) -> None:
         itype, idx, tail = _parse(line)
         if itype is None:
             console.print("[dim]noted (freeform).[/dim]")
+            continue
+        if itype == "mood":
+            console.print(f"[green]{_set_mood(store, tail)}[/green]")
             continue
         if not items:
             items = _last_surface_items(db)
@@ -164,4 +214,7 @@ def run_repl(db, store, llm=None) -> None:
             continue
         summary = _apply(db, store, target, itype)
         console.print(f"[green]{summary}[/green]")
+
+    if runtime is not None:
+        runtime.shutdown.set()
     console.print("bye.")

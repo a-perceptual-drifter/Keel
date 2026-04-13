@@ -19,8 +19,10 @@ file *is* the account.
 bash setup.sh           # creates .venv, installs deps, installs Ollama,
                         # pulls llama3.2 + nomic-embed-text
 .venv/bin/python run.py init       # seed your identity with topics
-.venv/bin/python run.py schedule   # start the background agent
-.venv/bin/python run.py chat       # open the conversation surface
+.venv/bin/python run.py run        # unified: scheduler + REPL in one process
+# or, separately:
+.venv/bin/python run.py schedule   # background agent only (no REPL)
+.venv/bin/python run.py chat       # REPL only (no scheduler)
 ```
 
 Or run individual tasks manually:
@@ -76,7 +78,8 @@ extra and setting `embed_model: bge-small-en-v1.5`.
 |------------------------------------|---------------------------------------------|
 | `run.py setup`                     | Detect hardware, suggest config             |
 | `run.py init`                      | Cold-start identity seed                    |
-| `run.py schedule`                  | Start APScheduler + CLI REPL                |
+| `run.py run`                       | Unified: background scheduler + REPL        |
+| `run.py schedule`                  | Scheduler only (blocking, no REPL)          |
 | `run.py chat`                      | Open CLI REPL without scheduler             |
 | `run.py task --task <name>`        | Run one task manually                       |
 | `run.py status`                    | Show interest count, DB size                |
@@ -135,6 +138,12 @@ run `setup.sh`. If you find bugs, open an issue with the minimal
 sequence that reproduces it. If you want to send patches, keep the
 `core/`-is-pure contract intact — no IO in `core/`, no concrete
 implementations, no `datetime.now()` without an `as_of` parameter.
+
+## Further reading
+
+The design story behind Keel — why the account is the agent, and what
+"a feed that reads with you" actually means in practice — is written up
+here: https://aperceptualdrifter.substack.com/p/your-agent
 
 ## License
 

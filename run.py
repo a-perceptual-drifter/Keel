@@ -124,37 +124,77 @@ def init():
     click.echo("identity seeded.")
 
 
-@cli.command()
-def schedule():
-    """Start APScheduler + CLI REPL."""
-    from agent.scheduler import build_scheduler
-    from agent.surface.cli import run_repl
+def _wire_jobs(config, sources_cfg, db, store, runtime=None):
     from agent.tasks.fetch import fetch_all
     from agent.tasks.reflect import run_reflect
     from agent.tasks.score import score_pending
     from agent.tasks.silence import apply_silence
     from agent.tasks.surface import run_surface
 
-    config, prefs, sources_cfg, db, store = _bootstrap()
     sources = _build_sources(sources_cfg)
     llm = _build_llm(config)
     embedder = _build_embedder(config)
 
+    def _emit(task, **payload):
+        if runtime is not None:
+            runtime.emit(task, payload)
+
+    def _wrap(name, fn):
+        def _w():
+            _emit("task_start", task=name)
+            try:
+                n = fn()
+                _emit("task_complete", task=name, count=n or 0)
+            except Exception as e:
+                _emit("error", task=name, error=str(e))
+                log.exception("task %s failed", name)
+        return _w
+
     def _fetch_and_score():
         fetch_all(db, sources)
-        score_pending(db, store.load(), embedder, llm=llm)
+        return score_pending(db, store.load(), embedder, llm=llm)
 
     jobs = {
-        "fetch_and_score": _fetch_and_score,
-        "surface": lambda: run_surface(db, store, llm),
-        "silence": lambda: apply_silence(db, store),
-        "reflect": lambda: run_reflect(db, store, llm),
+        "fetch_and_score": _wrap("fetch_and_score", _fetch_and_score),
+        "surface": _wrap("surface", lambda: run_surface(db, store, llm, runtime=runtime)),
+        "silence": _wrap("silence", lambda: apply_silence(db, store)),
+        "reflect": _wrap("reflect", lambda: run_reflect(db, store, llm)),
     }
-    sched = build_scheduler(jobs)
+    return jobs, llm
+
+
+@cli.command()
+def schedule():
+    """Start APScheduler only (blocking; no REPL)."""
+    from agent.scheduler import build_scheduler
+    config, prefs, sources_cfg, db, store = _bootstrap()
+    jobs, _ = _wire_jobs(config, sources_cfg, db, store)
+    sched = build_scheduler(jobs, background=False)
     try:
         sched.start()
     except (KeyboardInterrupt, SystemExit):
         pass
+
+
+@cli.command()
+def run():
+    """Unified mode: background scheduler + interactive REPL in one process."""
+    from agent.runtime import Runtime
+    from agent.scheduler import build_scheduler
+    from agent.surface.cli import run_repl
+
+    config, prefs, sources_cfg, db, store = _bootstrap()
+    runtime = Runtime()
+    jobs, llm = _wire_jobs(config, sources_cfg, db, store, runtime)
+    sched = build_scheduler(jobs, background=True)
+    sched.start()
+    try:
+        run_repl(db, store, llm, runtime=runtime)
+    finally:
+        try:
+            sched.shutdown(wait=False)
+        except Exception:
+            pass
 
 
 @cli.command()

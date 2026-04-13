@@ -38,7 +38,7 @@ def _row_to_scored(r: dict) -> ScoredArticle:
     )
 
 
-def run_surface(db: sqlite_utils.Database, store, llm=None) -> int:
+def run_surface(db: sqlite_utils.Database, store, llm=None, runtime=None) -> int:
     model: IdentityModel = store.load()
     filter_t, intro_t = apply_mood_thresholds(model.mood)
     rows = list(
@@ -65,6 +65,16 @@ def run_surface(db: sqlite_utils.Database, store, llm=None) -> int:
                 "surfaced_at": datetime.now().isoformat(),
                 "surfaced_msg_id": msg_id,
                 "resolution": model.presentation.default_resolution,
+            },
+        )
+    if runtime is not None:
+        runtime.emit(
+            "new_message",
+            {
+                "message_id": msg_id,
+                "task": "surface",
+                "content": msg,
+                "count": len(selected),
             },
         )
     return len(selected)

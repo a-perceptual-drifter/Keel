@@ -7,12 +7,16 @@ import signal
 log = logging.getLogger(__name__)
 
 
-def build_scheduler(jobs: dict):
-    from apscheduler.schedulers.blocking import BlockingScheduler
+def build_scheduler(jobs: dict, background: bool = True):
     from apscheduler.triggers.cron import CronTrigger
     from apscheduler.triggers.interval import IntervalTrigger
 
-    sched = BlockingScheduler()
+    if background:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        sched = BackgroundScheduler()
+    else:
+        from apscheduler.schedulers.blocking import BlockingScheduler
+        sched = BlockingScheduler()
     if "fetch_and_score" in jobs:
         sched.add_job(jobs["fetch_and_score"], IntervalTrigger(hours=6), id="fetch", misfire_grace_time=3600)
     if "surface" in jobs:
