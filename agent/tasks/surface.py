@@ -48,14 +48,18 @@ def run_surface(db: sqlite_utils.Database, store, llm=None, runtime=None) -> int
         )
     )
     scored = [_row_to_scored(r) for r in rows]
+    if not scored:
+        return 0
     max_items = model.presentation.max_items_per_surface
-    # priority chain: challenge > filter > introduce
     priority = {"challenge": 0, "filter": 1, "introduce": 2, "none": 3}
     scored.sort(key=lambda s: (priority.get(s.bucket, 9), -s.interest_score))
     selected = [s for s in scored if s.bucket in ("filter", "introduce", "challenge")][:max_items]
+    exploration = False
     if not selected:
-        return 0
-    msg = assemble_surface_message(selected, mood=model.mood, llm=llm)
+        exploration = True
+        selected = sorted(scored, key=lambda s: -s.interest_score)[:max_items]
+    surface_mood = f"{model.mood} (exploration)" if exploration else model.mood
+    msg = assemble_surface_message(selected, mood=surface_mood, llm=llm)
     msg_id = write_message(db, "agent", msg, task="surface", mood_at_surface=model.mood)
     for s in selected:
         db["articles"].update(
