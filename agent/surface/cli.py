@@ -11,7 +11,8 @@ from rich.console import Console
 from agent.ledger import write_updates
 from agent.runtime import Runtime
 from agent.surface.thread import read_history, write_message
-from core.identity.updater import apply_interaction, nuance_interest
+from agent.topics import extract_topic, find_matching_interest
+from core.identity.updater import apply_interaction, create_interpreted_interest, nuance_interest
 from core.expansion.mood import MOODS
 
 console = Console()
@@ -76,30 +77,72 @@ def _parse(line: str) -> tuple[str | None, int | None, str]:
     return None, None, line
 
 
-def _apply(db, store, item: dict, interaction_type: str) -> str:
+def _apply(db, store, item: dict, interaction_type: str, llm=None, embedder=None) -> str:
     try:
         mr = json.loads(item.get("match_reason") or "[]")
     except Exception:
         mr = []
     topic_id = mr[0]["topic_id"] if mr else None
-    with store.lock():
-        model = store.load()
-        model, updates = apply_interaction(
-            model, topic_id, interaction_type, date.today(), article_id=item["id"]
-        )
-        write_updates(db, updates)
-        store.save(model)
+    if topic_id:
+        existing = {i.id for i in store.load().interests}
+        if topic_id not in existing:
+            topic_id = None
+    interaction_ts = datetime.now().isoformat()
+    summary: str
+    if topic_id:
+        with store.lock():
+            model = store.load()
+            model, updates = apply_interaction(
+                model, topic_id, interaction_type, date.today(), article_id=item["id"]
+            )
+            write_updates(db, updates)
+            store.save(model)
+        summary = f"{interaction_type} → {mr[0]['topic']}"
+    elif llm is None or embedder is None:
+        with store.lock():
+            model = store.load()
+            model, updates = apply_interaction(
+                model, None, interaction_type, date.today(), article_id=item["id"]
+            )
+            write_updates(db, updates)
+            store.save(model)
+        summary = f"{interaction_type} → (uncategorized; no LLM/embedder configured)"
+    else:
+        row = next(iter(db.query("SELECT title, content FROM articles WHERE id = ?", [item["id"]])), None)
+        title = (row or {}).get("title") or item.get("title") or ""
+        body = (row or {}).get("content") or ""
+        topic = extract_topic(llm, title, body)
+        with store.lock():
+            model = store.load()
+            matched = find_matching_interest(topic, model, embedder) if topic else None
+            if matched is not None:
+                model, updates = apply_interaction(
+                    model, matched.id, interaction_type, date.today(), article_id=item["id"]
+                )
+                label = f"{matched.topic} (matched)"
+            elif topic and topic != "uncategorized":
+                model, updates = create_interpreted_interest(
+                    model, topic, interaction_type, date.today(), article_id=item["id"]
+                )
+                label = f"{topic} (new)"
+            else:
+                model, updates = apply_interaction(
+                    model, None, interaction_type, date.today(), article_id=item["id"]
+                )
+                label = "uncategorized"
+            write_updates(db, updates)
+            store.save(model)
+        summary = f"{interaction_type} → {label}"
     db["interactions"].insert(
         {
             "article_id": item["id"],
             "message_id": None,
             "type": interaction_type,
             "detail": None,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": interaction_ts,
         }
     )
-    topic = mr[0]["topic"] if mr else "(no topic)"
-    return f"{interaction_type} → {topic}"
+    return summary
 
 
 def _set_mood(store, new_mood: str) -> str:
@@ -235,7 +278,7 @@ def _summarize_item(db, llm, item: dict) -> str:
 
 
 
-def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | None = None, summarize_llm=None) -> None:
+def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | None = None, summarize_llm=None, embedder=None) -> None:
     console.print("[bold cyan]keel[/bold cyan] — type 'help' for commands, 'quit' to exit")
     items = _last_surface_items(db)
     if items:
@@ -370,7 +413,7 @@ def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | N
                 store.save(model)
             console.print(f"[green]nuanced interest {interest_id}[/green]")
             continue
-        summary = _apply(db, store, target, itype)
+        summary = _apply(db, store, target, itype, llm=llm, embedder=embedder)
         console.print(f"[green]{summary}[/green]")
 
     if runtime is not None:

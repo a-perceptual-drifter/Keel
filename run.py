@@ -15,8 +15,9 @@ import yaml
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from agent.init import apply_migrations, reconcile_identity, seed_identity  # noqa: E402
+from agent.init import apply_migrations, reconcile_identity  # noqa: E402
 from agent.store import JsonStore  # noqa: E402
+from core.models import IdentityModel, MetaPreferences, PresentationPrefs  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -130,13 +131,39 @@ def setup():
     click.echo(f"suggested config: {suggest_config(profile)}")
 
 
+def _empty_identity(as_of: date | None = None) -> IdentityModel:
+    as_of = as_of or date.today()
+    return IdentityModel(
+        version="1.0",
+        created_at=as_of,
+        updated_at=as_of,
+        interests=[],
+        dismissals=[],
+        anti_interests=[],
+        presentation=PresentationPrefs(),
+        meta=MetaPreferences(),
+    )
+
+
 @cli.command()
 def init():
-    """Cold-start identity seed."""
+    """Cold-start: create an empty identity. Interests are learned from your reactions."""
     config, prefs, sources_cfg, db, store = _bootstrap()
-    topics = click.prompt("Seed topics (comma-separated)", default="technology, philosophy")
-    seed_identity(store, [t.strip() for t in topics.split(",") if t.strip()])
-    click.echo("identity seeded.")
+    with store.lock():
+        store.save(_empty_identity())
+    click.echo("empty identity created. React to surfaced items and your interests will build over time.")
+
+
+@cli.command("reset-identity")
+@click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
+def reset_identity(yes):
+    """Wipe the current identity model and start fresh."""
+    config, prefs, sources_cfg, db, store = _bootstrap()
+    if not yes:
+        click.confirm("This will erase all interests, dismissals, and mood state. Continue?", abort=True)
+    with store.lock():
+        store.save(_empty_identity())
+    click.echo("identity reset.")
 
 
 def _wire_jobs(config, sources_cfg, db, store, runtime=None):
@@ -205,7 +232,8 @@ def run():
     sched.start()
     try:
         summarize_llm = _build_summarize_llm(config, llm)
-        run_repl(db, store, llm, runtime=runtime, jobs=jobs, summarize_llm=summarize_llm)
+        embedder = _build_embedder(config)
+        run_repl(db, store, llm, runtime=runtime, jobs=jobs, summarize_llm=summarize_llm, embedder=embedder)
     finally:
         try:
             sched.shutdown(wait=False)
@@ -223,7 +251,11 @@ def chat():
     except Exception:
         llm = None
     summarize_llm = _build_summarize_llm(config, llm) if llm else None
-    run_repl(db, store, llm, summarize_llm=summarize_llm)
+    try:
+        embedder = _build_embedder(config)
+    except Exception:
+        embedder = None
+    run_repl(db, store, llm, summarize_llm=summarize_llm, embedder=embedder)
 
 
 @cli.command()

@@ -57,7 +57,10 @@ def run_surface(db: sqlite_utils.Database, store, llm=None, runtime=None) -> int
     exploration = False
     if not selected:
         exploration = True
-        selected = sorted(scored, key=lambda s: -s.interest_score)[:max_items]
+        selected = sorted(
+            scored,
+            key=lambda s: (-s.interest_score, -(s.raw.external_score or 0)),
+        )[:max_items]
     surface_mood = f"{model.mood} (exploration)" if exploration else model.mood
     msg = assemble_surface_message(selected, mood=surface_mood, llm=llm)
     msg_id = write_message(db, "agent", msg, task="surface", mood_at_surface=model.mood)

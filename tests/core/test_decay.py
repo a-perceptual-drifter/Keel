@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from core.identity.updater import (
     apply_decay,
     apply_interaction,
+    create_interpreted_interest,
     transition_states,
 )
 from core.models import EPSILON_FLOOR
@@ -51,3 +52,19 @@ def test_state_transitions_dormant(sample_model, today):
     m = replace(sample_model, interests=[i] + sample_model.interests[1:])
     new_model, _ = transition_states(m, today)
     assert new_model.interests[0].state == "dormant"
+
+
+def test_create_interpreted_interest(sample_model, today):
+    before_count = len(sample_model.interests)
+    new_model, updates = create_interpreted_interest(
+        sample_model, "distributed systems", "worth_it", today, article_id=42
+    )
+    assert len(new_model.interests) == before_count + 1
+    new_i = new_model.interests[-1]
+    assert new_i.topic == "distributed systems"
+    assert new_i.provenance == "interpreted"
+    assert new_i.state == "active"
+    assert new_i.weight == 0.50
+    assert new_i.lifetime_engagements == 1
+    assert new_model.total_interactions == sample_model.total_interactions + 1
+    assert any(u.update_type == "interest_created" for u in updates)

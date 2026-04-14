@@ -201,6 +201,72 @@ def apply_interaction(
     return new_model, updates
 
 
+INTERPRETED_STARTING_WEIGHT = {
+    "engage": 0.30,
+    "acknowledged": 0.25,
+    "go_further": 0.40,
+    "worth_it": 0.50,
+    "nuanced": 0.35,
+}
+
+
+def create_interpreted_interest(
+    model: IdentityModel,
+    topic: str,
+    interaction_type: str,
+    as_of: date,
+    article_id: int | None = None,
+    interest_id: str | None = None,
+) -> tuple[IdentityModel, list[ModelUpdate]]:
+    """Create a new interpreted interest from a user reaction to an uncategorized article."""
+    weight = INTERPRETED_STARTING_WEIGHT.get(interaction_type, 0.30)
+    existing_ids = {i.id for i in model.interests}
+    if not interest_id:
+        n = len(model.interests)
+        while True:
+            candidate = f"int_interp_{n:03d}"
+            if candidate not in existing_ids:
+                interest_id = candidate
+                break
+            n += 1
+    new_i = Interest(
+        id=interest_id,
+        topic=topic,
+        weight=weight,
+        provenance="interpreted",
+        decay_rate="medium",
+        challenge_mode="adjacent",
+        state="active",
+        first_seen=as_of,
+        last_reinforced=as_of,
+        lifetime_engagements=1,
+    )
+    updates = [
+        ModelUpdate(
+            timestamp=_now_ts(as_of),
+            interest_id=new_i.id,
+            update_type="interest_created",
+            field="_interest",
+            value_before="",
+            value_after=_interest_snapshot(new_i),
+            triggered_by=interaction_type,
+            article_id=article_id,
+        )
+    ]
+    total = model.total_interactions + 1
+    expl_end = model.exploration_end_at
+    if expl_end is None and total >= EXPLORATION_INTERACTIONS:
+        expl_end = as_of
+    new_model = replace(
+        model,
+        interests=list(model.interests) + [new_i],
+        updated_at=as_of,
+        total_interactions=total,
+        exploration_end_at=expl_end,
+    )
+    return new_model, updates
+
+
 def nuance_interest(
     model: IdentityModel,
     interest_id: str,
