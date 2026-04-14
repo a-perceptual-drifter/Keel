@@ -195,12 +195,20 @@ def _wire_jobs(config, sources_cfg, db, store, runtime=None):
                 log.exception("task %s failed", name)
         return _w
 
+    from agent.tasks.prefetch import prefetch_bodies
+
     fetch_cfg = (config or {}).get("fetch", {}) or {}
     max_age_hours = fetch_cfg.get("max_age_hours", 24)
+    prefetch_limit = fetch_cfg.get("prefetch_limit", 50)
 
     def _fetch_and_score():
         fetch_all(db, sources, max_age_hours=max_age_hours)
-        return score_pending(db, store.load(), embedder, llm=llm)
+        n = score_pending(db, store.load(), embedder, llm=llm)
+        try:
+            prefetch_bodies(db, limit=prefetch_limit)
+        except Exception:
+            log.exception("prefetch_bodies failed")
+        return n
 
     jobs = {
         "fetch_and_score": _wrap("fetch_and_score", _fetch_and_score),
@@ -265,7 +273,7 @@ def chat():
 
 
 @cli.command()
-@click.option("--task", "task_name", type=click.Choice(["fetch", "score", "surface", "silence", "reflect"]), required=True)
+@click.option("--task", "task_name", type=click.Choice(["fetch", "score", "prefetch", "surface", "silence", "reflect"]), required=True)
 def task(task_name):
     """Run a single task manually."""
     config, prefs, sources_cfg, db, store = _bootstrap()
@@ -278,6 +286,11 @@ def task(task_name):
         from agent.tasks.score import score_pending
         n = score_pending(db, store.load(), _build_embedder(config), llm=_build_llm(config))
         click.echo(f"scored {n}")
+    elif task_name == "prefetch":
+        from agent.tasks.prefetch import prefetch_bodies
+        limit = ((config or {}).get("fetch", {}) or {}).get("prefetch_limit", 50)
+        n = prefetch_bodies(db, limit=limit)
+        click.echo(f"prefetched {n}")
     elif task_name == "surface":
         from agent.tasks.surface import run_surface
         n = run_surface(db, store, _build_llm(config))

@@ -57,6 +57,7 @@ mood:
 
 fetch:
   max_age_hours: 24            # drop items with published_at older than this; 0 or null = no age filter
+  prefetch_limit: 50           # max scored articles to prefetch body for per fetch+score cycle
 
 drift:
   compression_alert_msd_drop_pct: 0.30

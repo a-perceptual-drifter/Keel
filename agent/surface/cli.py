@@ -9,6 +9,7 @@ from datetime import date, datetime
 
 from rich.console import Console
 
+from agent.body_fetch import MIN_BODY_CHARS, fetch_article_body
 from agent.ledger import write_updates
 from agent.runtime import Runtime
 from agent.surface.thread import read_history, write_message
@@ -60,7 +61,7 @@ def _pull_replacement(db, msg_id: int | None, exclude_ids: list[int]) -> dict | 
         where += f" AND id NOT IN ({placeholders})"
         params.extend(exclude_ids)
     sql = (
-        f"SELECT id, title, url, match_reason FROM articles "
+        f"SELECT id, title, url, match_reason, body_status FROM articles "
         f"WHERE {where} "
         f"ORDER BY interest_score DESC, COALESCE(external_score, 0) DESC LIMIT 1"
     )
@@ -89,7 +90,7 @@ def _last_surface_items(db) -> list[dict]:
     msg_id = row[0]["id"]
     return list(
         db.query(
-            "SELECT id, title, url, match_reason FROM articles "
+            "SELECT id, title, url, match_reason, body_status FROM articles "
             "WHERE surfaced_msg_id = ? AND fetch_state = 'surfaced' ORDER BY id",
             [msg_id],
         )
@@ -101,7 +102,8 @@ def _show_items(items: list[dict]) -> None:
         console.print("[dim]no items from last surface.[/dim]")
         return
     for i, it in enumerate(items, 1):
-        console.print(f"  [bold]{i}[/bold]. {it['title']}")
+        tag = "  [dim yellow][link-only][/dim yellow]" if (it.get("body_status") == "link_only") else ""
+        console.print(f"  [bold]{i}[/bold]. {it['title']}{tag}")
         console.print(f"     [dim]{it['url']}[/dim]")
 
 
@@ -244,73 +246,32 @@ TASK_COMMANDS = {"fetch": "fetch_and_score", "score": "fetch_and_score", "surfac
 SUMMARIZE_ALIASES = ("summarize", "summarise", "sum", "tldr")
 
 
-_BROWSER_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate",
-}
-
-
-def _looks_like_cf_challenge(html: str) -> bool:
-    if not html:
-        return False
-    head = html[:2000].lower()
-    return "just a moment" in head or "cf-browser-verification" in head or "challenge-platform" in head
-
-
-def _fetch_with_cloudscraper(url: str) -> str:
-    try:
-        import cloudscraper
-    except ImportError:
-        return ""
-    try:
-        scraper = cloudscraper.create_scraper()
-        resp = scraper.get(url, timeout=30, allow_redirects=True)
-        if resp.status_code != 200 or not resp.text:
-            return ""
-        return resp.text
-    except Exception:
-        return ""
-
-
-def _fetch_article_body(url: str) -> str:
-    try:
-        import requests
-        import trafilatura
-    except Exception:
-        return ""
-    html = ""
-    try:
-        resp = requests.get(url, headers=_BROWSER_HEADERS, timeout=15, allow_redirects=True)
-        if resp.status_code == 200 and resp.text and not _looks_like_cf_challenge(resp.text):
-            html = resp.text
-    except Exception:
-        pass
-    if not html:
-        html = _fetch_with_cloudscraper(url)
-    if not html:
-        return ""
-    try:
-        return trafilatura.extract(html, url=url) or ""
-    except Exception:
-        return ""
-
-
 def _summarize_item(db, llm, item: dict) -> str:
-    row = next(iter(db.query("SELECT content FROM articles WHERE id = ?", [item["id"]])), None)
-    body = (row or {}).get("content") or ""
-    if len(body) < 200:
-        fetched = _fetch_article_body(item["url"])
-        if fetched:
+    row = next(
+        iter(db.query("SELECT content, body_status FROM articles WHERE id = ?", [item["id"]])),
+        None,
+    )
+    body = ((row or {}).get("content") or "").strip()
+    status = (row or {}).get("body_status")
+    if len(body) < MIN_BODY_CHARS and status != "link_only":
+        fetched = fetch_article_body(item["url"])
+        if fetched and len(fetched) >= MIN_BODY_CHARS:
             body = fetched
             try:
-                db["articles"].update(int(item["id"]), {"content": body})
+                db["articles"].update(
+                    int(item["id"]),
+                    {"content": body, "body_status": "body_ok"},
+                )
             except Exception:
                 pass
+        else:
+            try:
+                db["articles"].update(int(item["id"]), {"body_status": "link_only"})
+            except Exception:
+                pass
+            return f"(link-only — open in browser: {item['url']})"
+    if status == "link_only" and len(body) < MIN_BODY_CHARS:
+        return f"(link-only — open in browser: {item['url']})"
     if not body:
         return f"(could not retrieve body of {item['url']})"
     body = body[:3500]
