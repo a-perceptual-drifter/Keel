@@ -117,8 +117,11 @@ def _build_embedder(config: dict):
 
 
 @click.group()
-def cli() -> None:
-    pass
+@click.option("--debug", is_flag=True, envvar="KEEL_DEBUG", help="Stream DEBUG-level logs from every component to the console.")
+def cli(debug) -> None:
+    if debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+        log.debug("debug mode enabled via --debug / KEEL_DEBUG")
 
 
 @cli.command()

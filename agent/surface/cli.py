@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import threading
 from datetime import date, datetime
@@ -329,8 +330,21 @@ def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | N
             console.print("  [bold]reflect[/bold]        decay weights, transition interest states, write summary")
             console.print("")
             console.print("[bold cyan]session[/bold cyan]")
+            console.print("  [bold]debug on[/bold] / [bold]debug off[/bold]   toggle verbose logging to the console")
             console.print("  [bold]help[/bold]           this message")
             console.print("  [bold]quit[/bold]           exit ([dim]also: exit, :q[/dim])")
+            continue
+        if line.startswith("debug"):
+            arg = line[5:].strip().lower()
+            root = logging.getLogger()
+            if arg in ("on", "true", "1", ""):
+                root.setLevel(logging.DEBUG)
+                console.print("[dim]• debug logging ON[/dim]")
+            elif arg in ("off", "false", "0"):
+                root.setLevel(logging.INFO)
+                console.print("[dim]• debug logging OFF[/dim]")
+            else:
+                console.print("[red]usage: debug on | debug off[/red]")
             continue
         if line in TASK_COMMANDS:
             if not jobs:
