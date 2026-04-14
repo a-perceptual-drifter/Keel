@@ -427,7 +427,7 @@ def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | N
             target = items[pick - 1]
             console.print(f"[bold]{pick}.[/bold] {target['title']}")
             console.print(f"   [dim]{target['url']}[/dim]")
-            console.print("[dim]  [e]ngage  [f]urther  [w]orth  [d]ismiss  [r]egret  [n]oted  [s]kip[/dim]")
+            console.print(r"[dim]  \[e]ngage  \[f]urther  \[w]orth  \[d]ismiss  \[r]egret  \[n]oted  \[s]kip[/dim]")
             with patch_stdout():
                 pick_key = session.prompt("? ").strip().lower()
             entry = QUICK_MENU.get(pick_key[:1]) if pick_key else None
@@ -466,7 +466,7 @@ def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | N
             target = items[sum_match - 1]
             console.print(f"[dim]summarizing {target['title']}...[/dim]")
             console.print(_summarize_item(db, active_llm, target))
-            console.print("[dim]  [e]ngage  [f]urther  [w]orth  [d]ismiss  [r]egret  [n]oted  [s]kip[/dim]")
+            console.print(r"[dim]  \[e]ngage  \[f]urther  \[w]orth  \[d]ismiss  \[r]egret  \[n]oted  \[s]kip[/dim]")
             with patch_stdout():
                 pick_key = session.prompt("? ").strip().lower()
             entry = QUICK_MENU.get(pick_key[:1]) if pick_key else None
