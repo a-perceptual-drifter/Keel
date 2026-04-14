@@ -90,7 +90,7 @@ def _last_surface_items(db) -> list[dict]:
     return list(
         db.query(
             "SELECT id, title, url, match_reason FROM articles "
-            "WHERE surfaced_msg_id = ? ORDER BY id",
+            "WHERE surfaced_msg_id = ? AND fetch_state = 'surfaced' ORDER BY id",
             [msg_id],
         )
     )
@@ -188,6 +188,10 @@ def _apply(db, store, item: dict, interaction_type: str, llm=None, embedder=None
             "timestamp": interaction_ts,
         }
     )
+    try:
+        db["articles"].update(int(item["id"]), {"fetch_state": "resolved"})
+    except Exception:
+        pass
     return summary
 
 
