@@ -55,6 +55,9 @@ mood:
   default_reset_hours: 24
   momentum: 0.3
 
+fetch:
+  max_age_hours: 24            # drop items with published_at older than this; 0 or null = no age filter
+
 drift:
   compression_alert_msd_drop_pct: 0.30
 

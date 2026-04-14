@@ -195,8 +195,11 @@ def _wire_jobs(config, sources_cfg, db, store, runtime=None):
                 log.exception("task %s failed", name)
         return _w
 
+    fetch_cfg = (config or {}).get("fetch", {}) or {}
+    max_age_hours = fetch_cfg.get("max_age_hours", 24)
+
     def _fetch_and_score():
-        fetch_all(db, sources)
+        fetch_all(db, sources, max_age_hours=max_age_hours)
         return score_pending(db, store.load(), embedder, llm=llm)
 
     jobs = {
@@ -268,7 +271,8 @@ def task(task_name):
     config, prefs, sources_cfg, db, store = _bootstrap()
     if task_name == "fetch":
         from agent.tasks.fetch import fetch_all
-        n = fetch_all(db, _build_sources(sources_cfg))
+        max_age_hours = ((config or {}).get("fetch", {}) or {}).get("max_age_hours", 24)
+        n = fetch_all(db, _build_sources(sources_cfg), max_age_hours=max_age_hours)
         click.echo(f"fetched {n}")
     elif task_name == "score":
         from agent.tasks.score import score_pending

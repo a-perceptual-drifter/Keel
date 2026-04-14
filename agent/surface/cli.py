@@ -466,6 +466,22 @@ def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | N
             target = items[sum_match - 1]
             console.print(f"[dim]summarizing {target['title']}...[/dim]")
             console.print(_summarize_item(db, active_llm, target))
+            console.print("[dim]  [e]ngage  [f]urther  [w]orth  [d]ismiss  [r]egret  [n]oted  [s]kip[/dim]")
+            with patch_stdout():
+                pick_key = session.prompt("? ").strip().lower()
+            entry = QUICK_MENU.get(pick_key[:1]) if pick_key else None
+            if entry is None or entry[0] is None:
+                console.print("[dim]skipped.[/dim]")
+                continue
+            summary = _apply(db, store, target, entry[0], llm=llm, embedder=embedder)
+            console.print(f"[green]{summary}[/green]")
+            msg_id = _last_surface_msg_id(db)
+            repl = _pull_replacement(db, msg_id, [i["id"] for i in items])
+            if repl is not None:
+                items[sum_match - 1] = repl
+                console.print(f"[dim]  slot {sum_match} → {repl['title']}[/dim]")
+            else:
+                console.print("[dim]  (no replacement available)[/dim]")
             continue
         itype, idx, tail = _parse(line)
         if itype is None:
