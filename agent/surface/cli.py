@@ -33,6 +33,51 @@ COMMANDS = {
 }
 
 
+QUICK_MENU = {
+    "e": ("engage", "engage"),
+    "f": ("go_further", "go further"),
+    "w": ("worth_it", "worth"),
+    "d": ("dismiss_article", "dismiss"),
+    "r": ("regret", "regret"),
+    "n": ("acknowledged", "noted"),
+    "s": (None, "skip"),
+}
+
+
+def _last_surface_msg_id(db) -> int | None:
+    row = list(db.query("SELECT id FROM messages WHERE task='surface' ORDER BY id DESC LIMIT 1"))
+    return row[0]["id"] if row else None
+
+
+def _pull_replacement(db, msg_id: int | None, exclude_ids: list[int]) -> dict | None:
+    """Pick the next best scored-but-unsurfaced article and attach it to the given surface message."""
+    if msg_id is None:
+        return None
+    placeholders = ",".join("?" for _ in exclude_ids) if exclude_ids else ""
+    where = "fetch_state = 'scored'"
+    params: list = []
+    if exclude_ids:
+        where += f" AND id NOT IN ({placeholders})"
+        params.extend(exclude_ids)
+    sql = (
+        f"SELECT id, title, url, match_reason FROM articles "
+        f"WHERE {where} "
+        f"ORDER BY interest_score DESC, COALESCE(external_score, 0) DESC LIMIT 1"
+    )
+    row = next(iter(db.query(sql, params)), None)
+    if row is None:
+        return None
+    db["articles"].update(
+        int(row["id"]),
+        {
+            "fetch_state": "surfaced",
+            "surfaced_at": datetime.now().isoformat(),
+            "surfaced_msg_id": msg_id,
+        },
+    )
+    return dict(row)
+
+
 def _last_surface_items(db) -> list[dict]:
     row = list(
         db.query(
@@ -307,6 +352,7 @@ def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | N
             console.print("[bold]keel commands[/bold]")
             console.print("")
             console.print("[bold cyan]reacting to surfaced items[/bold cyan] [dim](N = item number from last surface)[/dim]")
+            console.print("  [bold]N[/bold]              just the number → quick menu (e/f/w/d/r/n/s)")
             console.print("  [bold]engage N[/bold]       weak positive — you read it (+0.03)")
             console.print("  [bold]go further N[/bold]   stronger positive — want more like this (+0.10)")
             console.print("  [bold]worth N[/bold]        strongest positive — this was worth the attention (+0.15)")
@@ -371,6 +417,34 @@ def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | N
             continue
         write_message(db, "user", line, task="qa")
         ll = line.lower().strip()
+        if ll.isdigit():
+            pick = int(ll)
+            if not items:
+                items = _last_surface_items(db)
+            if pick < 1 or pick > len(items):
+                console.print(f"[red]need an item number 1..{len(items)}[/red]")
+                continue
+            target = items[pick - 1]
+            console.print(f"[bold]{pick}.[/bold] {target['title']}")
+            console.print(f"   [dim]{target['url']}[/dim]")
+            console.print("[dim]  [e]ngage  [f]urther  [w]orth  [d]ismiss  [r]egret  [n]oted  [s]kip[/dim]")
+            with patch_stdout():
+                pick_key = session.prompt("? ").strip().lower()
+            entry = QUICK_MENU.get(pick_key[:1]) if pick_key else None
+            if entry is None or entry[0] is None:
+                console.print("[dim]skipped.[/dim]")
+                continue
+            itype = entry[0]
+            summary = _apply(db, store, target, itype, llm=llm, embedder=embedder)
+            console.print(f"[green]{summary}[/green]")
+            msg_id = _last_surface_msg_id(db)
+            repl = _pull_replacement(db, msg_id, [i["id"] for i in items])
+            if repl is not None:
+                items[pick - 1] = repl
+                console.print(f"[dim]  slot {pick} → {repl['title']}[/dim]")
+            else:
+                console.print("[dim]  (no replacement available)[/dim]")
+            continue
         sum_match = None
         for kw in SUMMARIZE_ALIASES:
             if ll.startswith(kw):
@@ -429,6 +503,13 @@ def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | N
             continue
         summary = _apply(db, store, target, itype, llm=llm, embedder=embedder)
         console.print(f"[green]{summary}[/green]")
+        msg_id = _last_surface_msg_id(db)
+        repl = _pull_replacement(db, msg_id, [i["id"] for i in items])
+        if repl is not None:
+            items[idx - 1] = repl
+            console.print(f"[dim]  slot {idx} → {repl['title']}[/dim]")
+        else:
+            console.print("[dim]  (no replacement available)[/dim]")
 
     if runtime is not None:
         runtime.shutdown.set()
