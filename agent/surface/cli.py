@@ -114,9 +114,11 @@ def _set_mood(store, new_mood: str) -> str:
     return f"mood → {new_mood}"
 
 
-def _drain_events(runtime: Runtime | None) -> None:
+def _drain_events(runtime: Runtime | None) -> bool:
+    """Returns True if a new surface message arrived (caller should refresh items)."""
     if runtime is None:
-        return
+        return False
+    surfaced = False
     for ev in runtime.drain():
         if ev.type == "new_message":
             console.print(
@@ -124,6 +126,8 @@ def _drain_events(runtime: Runtime | None) -> None:
                 f"([dim]{ev.payload.get('count', 0)} items[/dim])"
             )
             console.print(ev.payload.get("content", ""))
+            if ev.payload.get("task") == "surface":
+                surfaced = True
         elif ev.type == "task_start":
             console.print(f"[dim]• {ev.payload.get('task', '?')} started[/dim]")
         elif ev.type == "task_complete":
@@ -133,6 +137,7 @@ def _drain_events(runtime: Runtime | None) -> None:
             )
         elif ev.type == "error":
             console.print(f"[red]✗ {ev.payload.get('task', '?')}: {ev.payload.get('error', '')}[/red]")
+    return surfaced
 
 
 def _get_session():
@@ -239,13 +244,17 @@ def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | N
 
     session, patch_stdout = _get_session()
     while True:
-        _drain_events(runtime)
+        if _drain_events(runtime):
+            items = _last_surface_items(db)
+            _show_items(items)
         try:
             with patch_stdout():
                 line = session.prompt("> ").strip()
         except (EOFError, KeyboardInterrupt):
             break
-        _drain_events(runtime)
+        if _drain_events(runtime):
+            items = _last_surface_items(db)
+            _show_items(items)
         if not line:
             continue
         if line in {"quit", "exit", ":q"}:
