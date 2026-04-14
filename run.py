@@ -90,6 +90,19 @@ def _build_llm(config: dict):
     raise click.ClickException(f"unknown llm provider: {provider}")
 
 
+def _build_summarize_llm(config: dict, fallback):
+    llm_cfg = (config or {}).get("llm", {})
+    sm = llm_cfg.get("summarize_model") or ""
+    if not sm or sm == llm_cfg.get("model"):
+        return fallback
+    provider = llm_cfg.get("provider", "ollama")
+    if provider == "ollama":
+        from agent.llm import OllamaLLM
+        from agent.resources import OllamaResourceManager
+        return OllamaLLM(model=sm, resource_manager=OllamaResourceManager())
+    return fallback
+
+
 def _build_embedder(config: dict):
     llm_cfg = (config or {}).get("llm", {})
     em = llm_cfg.get("embed_model", "nomic-embed-text")
@@ -189,7 +202,8 @@ def run():
     sched = build_scheduler(jobs, background=True)
     sched.start()
     try:
-        run_repl(db, store, llm, runtime=runtime, jobs=jobs)
+        summarize_llm = _build_summarize_llm(config, llm)
+        run_repl(db, store, llm, runtime=runtime, jobs=jobs, summarize_llm=summarize_llm)
     finally:
         try:
             sched.shutdown(wait=False)
@@ -206,7 +220,8 @@ def chat():
         llm = _build_llm(config) if config.get("llm") else None
     except Exception:
         llm = None
-    run_repl(db, store, llm)
+    summarize_llm = _build_summarize_llm(config, llm) if llm else None
+    run_repl(db, store, llm, summarize_llm=summarize_llm)
 
 
 @cli.command()

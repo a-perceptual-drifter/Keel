@@ -215,22 +215,22 @@ def _summarize_item(db, llm, item: dict) -> str:
                 pass
     if not body:
         return f"(could not retrieve body of {item['url']})"
-    body = body[:8000]
+    body = body[:3500]
     system = (
         "You summarize articles for a reader who has not opened the link. "
-        "Return 3-6 bullet points covering the core claims, evidence, and any "
+        "Return 3-5 tight bullet points covering the core claims and any "
         "surprising or non-obvious points. No preamble, no meta-commentary, "
-        "no 'the article says'. If the text is too thin to summarize, say so in one line."
+        "no 'the article says'. If the text is too thin, say so in one line."
     )
     prompt = f"Title: {item['title']}\nURL: {item['url']}\n\n---\n{body}\n---"
     try:
-        return llm.complete(system, prompt, max_tokens=400).strip()
+        return llm.complete(system, prompt, max_tokens=200).strip()
     except Exception as e:
         return f"(summarization failed: {e})"
 
 
 
-def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | None = None) -> None:
+def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | None = None, summarize_llm=None) -> None:
     console.print("[bold cyan]keel[/bold cyan] — type 'help' for commands, 'quit' to exit")
     items = _last_surface_items(db)
     if items:
@@ -314,7 +314,8 @@ def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | N
                     sum_match = int(m.group(1))
                 break
         if sum_match is not None:
-            if llm is None:
+            active_llm = summarize_llm or llm
+            if active_llm is None:
                 console.print("[red]summarize requires an LLM[/red]")
                 continue
             if not items:
@@ -324,7 +325,7 @@ def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | N
                 continue
             target = items[sum_match - 1]
             console.print(f"[dim]summarizing {target['title']}...[/dim]")
-            console.print(_summarize_item(db, llm, target))
+            console.print(_summarize_item(db, active_llm, target))
             continue
         itype, idx, tail = _parse(line)
         if itype is None:

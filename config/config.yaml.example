@@ -4,6 +4,7 @@
 llm:
   provider: "ollama"           # ollama | anthropic | openai
   model: "llama3.2"            # model name for the provider
+  summarize_model: ""          # optional smaller model for on-demand article summaries; falls back to `model` if empty
   base_url: "http://localhost:11434"  # Ollama default; or OpenAI-compatible base URL
   api_key: ""                  # required for anthropic/openai; leave empty for ollama
   embed_provider: "ollama"     # ollama | sentence_transformers
