@@ -2,7 +2,8 @@
 # Thin wrapper so you can run `./keel <command>` without activating the venv.
 # Resolves the repo root via the script's own location so it works from any cwd.
 set -e
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+HERE="$(cd "$(dirname "$SELF")" && pwd)"
 if [ ! -x "$HERE/.venv/bin/python" ]; then
     echo "keel: .venv missing — run 'bash setup.sh' first" >&2
     exit 1
