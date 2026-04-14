@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sqlite3
 import sys
 from datetime import date
 from pathlib import Path
@@ -40,7 +41,8 @@ def _bootstrap():
     store_dir.mkdir(parents=True, exist_ok=True)
     db_path = store_dir / "keel.db"
     apply_migrations(str(db_path))
-    db = sqlite_utils.Database(str(db_path))
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
+    db = sqlite_utils.Database(conn)
     store = JsonStore(store_dir / "identity.json")
     tmp_path = Path(str(store.path) + ".tmp.json")
     if tmp_path.exists():
