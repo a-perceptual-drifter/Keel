@@ -148,9 +148,9 @@ def _wire_jobs(config, sources_cfg, db, store, runtime=None):
     llm = _build_llm(config)
     embedder = _build_embedder(config)
 
-    def _emit(task, **payload):
+    def _emit(event_type, **payload):
         if runtime is not None:
-            runtime.emit(task, payload)
+            runtime.emit(event_type, payload)
 
     def _wrap(name, fn):
         def _w():
