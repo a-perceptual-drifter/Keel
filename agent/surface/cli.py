@@ -244,6 +244,10 @@ def _get_session():
 TASK_COMMANDS = {"fetch": "fetch_and_score", "score": "fetch_and_score", "surface": "surface", "silence": "silence", "reflect": "reflect"}
 
 SUMMARIZE_ALIASES = ("summarize", "summarise", "sum", "tldr")
+FOCUS_ALIASES = ("focus", "discuss", "talk")
+FOCUS_MAX_TURNS = 12
+FOCUS_MAX_BODY = 4000
+FOCUS_MAX_TOKENS = 500
 
 
 def _summarize_item(db, llm, item: dict) -> str:
@@ -289,6 +293,73 @@ def _summarize_item(db, llm, item: dict) -> str:
 
 
 
+def _run_focus(db, llm, item: dict, session, patch_stdout) -> None:
+    """Enter a conversational sub-REPL grounded in the article body."""
+    row = next(
+        iter(db.query("SELECT content, body_status FROM articles WHERE id = ?", [item["id"]])),
+        None,
+    )
+    body = ((row or {}).get("content") or "").strip()
+    status = (row or {}).get("body_status")
+    if status == "link_only" and len(body) < MIN_BODY_CHARS:
+        console.print(f"[red]link-only — no body to discuss. Open in browser: {item['url']}[/red]")
+        return
+    if len(body) < MIN_BODY_CHARS:
+        fetched = fetch_article_body(item["url"])
+        if fetched and len(fetched) >= MIN_BODY_CHARS:
+            body = fetched
+            try:
+                db["articles"].update(int(item["id"]), {"content": body, "body_status": "body_ok"})
+            except Exception:
+                pass
+        else:
+            console.print(f"[red]could not retrieve enough content to discuss. Open in browser: {item['url']}[/red]")
+            return
+    body = body[:FOCUS_MAX_BODY]
+    system = (
+        "You are discussing an article with a thoughtful reader. "
+        "Ground your responses in the article when relevant, but you can bring in "
+        "general knowledge for broader discussion. Be direct, concise, and substantive. "
+        "Do not repeat the article summary unless asked.\n\n"
+        f"Article: {item['title']}\nURL: {item['url']}\n\n---\n{body}\n---"
+    )
+    history: list[tuple[str, str]] = []
+    console.print(f"\n[bold cyan]focus:[/bold cyan] {item['title']}")
+    console.print("[dim]type your questions / thoughts. 'back' or empty line to exit.[/dim]")
+    empty_count = 0
+    while True:
+        try:
+            with patch_stdout():
+                user_input = session.prompt(f"[{item['id']}]> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if not user_input:
+            empty_count += 1
+            if empty_count >= 2:
+                break
+            console.print("[dim]press Enter once more to exit focus mode[/dim]")
+            continue
+        empty_count = 0
+        if user_input.lower() in {"back", "done", "exit"}:
+            break
+        prompt_parts = []
+        for u, a in history[-(FOCUS_MAX_TURNS // 2):]:
+            prompt_parts.append(f"User: {u}")
+            prompt_parts.append(f"Assistant: {a}")
+        prompt_parts.append(f"User: {user_input}")
+        prompt = "\n".join(prompt_parts)
+        console.print("[dim]thinking...[/dim]")
+        try:
+            reply = llm.complete(system, prompt, max_tokens=FOCUS_MAX_TOKENS).strip()
+        except Exception as e:
+            console.print(f"[red](error: {e})[/red]")
+            continue
+        history.append((user_input, reply))
+        console.print(reply)
+        console.print()
+    console.print("[dim]left focus mode[/dim]")
+
+
 def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | None = None, summarize_llm=None, embedder=None) -> None:
     console.print("[bold cyan]keel[/bold cyan] — type 'help' for commands, 'quit' to exit")
     items = _last_surface_items(db)
@@ -326,6 +397,7 @@ def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | N
             console.print("  [bold]regret N[/bold]       strong negative — wasted my time (-0.15)")
             console.print("  [bold]nuance N <text>[/bold]  refine the matched interest in natural language")
             console.print("  [bold]summarize N[/bold]    LLM summary of item N ([dim]aliases: sum, tldr[/dim])")
+            console.print("  [bold]focus N[/bold]        enter a conversation about the article ([dim]aliases: discuss, talk[/dim])")
             console.print("[dim]  aliases: read/skim=engage, more=go further, drop=dismiss, ack=noted[/dim]")
             console.print("")
             console.print("[bold cyan]inspecting state[/bold cyan]")
@@ -445,6 +517,42 @@ def run_repl(db, store, llm=None, runtime: Runtime | None = None, jobs: dict | N
             if repl is not None:
                 items[sum_match - 1] = repl
                 console.print(f"[dim]  slot {sum_match} → {repl['title']}[/dim]")
+            else:
+                console.print("[dim]  (no replacement available)[/dim]")
+            continue
+        focus_match = None
+        for kw in FOCUS_ALIASES:
+            if ll.startswith(kw):
+                rest = line[len(kw):].strip()
+                m = re.match(r"(\d+)", rest)
+                if m:
+                    focus_match = int(m.group(1))
+                break
+        if focus_match is not None:
+            if llm is None:
+                console.print("[red]focus requires an LLM[/red]")
+                continue
+            if not items:
+                items = _last_surface_items(db)
+            if focus_match < 1 or focus_match > len(items):
+                console.print(f"[red]need an item number 1..{len(items)}[/red]")
+                continue
+            target = items[focus_match - 1]
+            _run_focus(db, llm, target, session, patch_stdout)
+            console.print(r"[dim]  \[e]ngage  \[f]urther  \[w]orth  \[d]ismiss  \[r]egret  \[n]oted  \[s]kip[/dim]")
+            with patch_stdout():
+                pick_key = session.prompt("? ").strip().lower()
+            entry = QUICK_MENU.get(pick_key[:1]) if pick_key else None
+            if entry is None or entry[0] is None:
+                console.print("[dim]skipped.[/dim]")
+                continue
+            summary = _apply(db, store, target, entry[0], llm=llm, embedder=embedder)
+            console.print(f"[green]{summary}[/green]")
+            msg_id = _last_surface_msg_id(db)
+            repl = _pull_replacement(db, msg_id, [i["id"] for i in items])
+            if repl is not None:
+                items[focus_match - 1] = repl
+                console.print(f"[dim]  slot {focus_match} → {repl['title']}[/dim]")
             else:
                 console.print("[dim]  (no replacement available)[/dim]")
             continue

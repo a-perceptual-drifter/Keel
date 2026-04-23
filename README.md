@@ -45,7 +45,11 @@ fetch (6h)  →  score  →  surface (07:00)  →  you read  →  interactions
 ```
 
 - **fetch** pulls from RSS, Hacker News, Reddit, or any URL; deduplicates
-  by URL; stores in SQLite with `fetch_state = ready_to_score`
+  by URL; stores in SQLite with `fetch_state = ready_to_score`.
+  Items older than `fetch.max_age_hours` (default 24h) are dropped.
+  After scoring, a **prefetch** step retrieves article bodies so
+  `summarize` and `focus` are instant. Items whose body can't be
+  retrieved are tagged `[link-only]` in the surface list
 - **score** embeds each item, compares against your active interests,
   assigns a bucket: `filter` (≥ 0.72), `introduce` (0.55–0.72),
   `challenge` (scored ≥ 0.60, classified as challenging an interest)
@@ -104,6 +108,7 @@ command set. A quick tour:
 | `regret N`         | −0.15      | wasted my time                            |
 | `nuance N <text>`  | refine     | natural-language refinement of the interest |
 | `summarize N`      | —          | LLM summary of the item (aliases: `sum`, `tldr`); fetches the page body if needed |
+| `focus N`          | —          | enter a conversation about the article (aliases: `discuss`, `talk`); exit with `back` |
 
 **Triggering tasks on demand** — dispatched on a background thread, events print inline:
 
